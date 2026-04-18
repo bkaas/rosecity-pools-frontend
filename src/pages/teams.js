@@ -40,22 +40,23 @@ class TeamGrid extends React.Component {
       fetchErr: false,
       loading: true,
       year: new Date().getFullYear(), // default to the current year
+      league: "Rose City", // default to Rose City: TODO shouldn't be hardcoded, pull from db
     };
 
     this.sortOptions = ['Alphabetical', 'Draft Order', 'Standings'];
 
-    this.assembleStandingsData = this.assembleStandingsData.bind(this);
     this.onSortSelect = this.onSortSelect.bind(this);
     this.onStandingsDropdownClick = this.onStandingsDropdownClick.bind(this);
     this.onYearSelect = this.onYearSelect.bind(this);
+    this.onLeagueSelect = this.onLeagueSelect.bind(this);
     this.fetchStats = this.fetchStats.bind(this);
   }
 
   componentDidMount() {
-    this.fetchStats(this.state.year);
+    this.fetchStats(this.state.year, this.state.league);
   }
 
-  fetchStats(year) {
+  fetchStats(year, league) {
     let fetchUrl;
     if (process.env.GATSBY_API_URL) {
       fetchUrl = process.env.GATSBY_API_URL + "/api/stats";
@@ -65,7 +66,7 @@ class TeamGrid extends React.Component {
     }
 
     // Append the query for the stats year on the URL
-    fetchUrl += "/?year=" + year;
+    fetchUrl += "/?year=" + year + "&league=" + league;
 
     fetch(fetchUrl)
       .then(res => {
@@ -80,6 +81,7 @@ class TeamGrid extends React.Component {
           fetchErr: false,
           loading: false,
           year: year,
+          league: league,
         })
 
         // Sort the teams when they first mount
@@ -94,65 +96,17 @@ class TeamGrid extends React.Component {
 
   }
 
-  assembleStandingsData() {
-  // Create object that is similar to the "state" object in structure
-  // Pass the object into the Team component for standings
-  // The "name" of the team will be "Standings"
-  // The stats will be each team name and their total points
-
-    const standingsData = this.state.team.map( team => {
-
-      const teamTotalPoints = team.stats.reduce((sum, stat) => {
-        return sum + stat.points;
-      }, 0);
-
-      return ({
-        firstname: team.name,
-        lastname:  "",
-        points:    teamTotalPoints,
-        logo:      false,
-      });
-    });
-
-    standingsData.sort((a, b) => {
-      return b.points - a.points;
-    });
-
-    return ({
-      name: "Standings",
-      stats: standingsData,
-    });
-
-  }
-
   onSortSelect(selectedOption) {
 
-    const standingsData = this.assembleStandingsData();
-    // Set the sort order
-    let sortCallback;
-    switch(this.sortOptions.indexOf(selectedOption)) {
-      case 0: // Alphabetical
-        sortCallback = (teamA, teamB) => {
-          const nameTeamA = teamA.name.toUpperCase();
-          const nameTeamB = teamB.name.toUpperCase();
-          return (nameTeamA < nameTeamB) ? -1 : (nameTeamA > nameTeamB) ? 1 : 0;
-        };
-        break;
-      case 1: // Draft Order
-        sortCallback = (teamA, teamB) => {
-          return teamA.stats[0].pick - teamB.stats[0].pick; // Subtract the first round pick numbers
-        };
-        break;
-      case 2: // Standings
-      default:
-        // Copy the standingsData order
-        const standingsTeamOrder = standingsData.stats.map( ({firstname}) => firstname );
-        sortCallback = (teamA, teamB) => {
-          return standingsTeamOrder.indexOf(teamA.name) - standingsTeamOrder.indexOf(teamB.name);
-        };
-    }
+    const optionIndex = this.sortOptions.indexOf(selectedOption);
 
     this.setState( (state) => {
+
+      /* assembleStandingsData needs to be in setState(), otherwise
+       * the state data is too old */
+      const standingsData = assembleStandingsData(state);
+      const sortCallback = getSortCallback(optionIndex, standingsData);
+
       return ({
         team: state.team.sort(sortCallback),
       });
@@ -171,7 +125,14 @@ class TeamGrid extends React.Component {
     // Update the year within fetchStats()
     // If updating prior to the call, it wasn't updating in time for the fetch
     this.setState({loading: true});
-    this.fetchStats(selectedYear);
+    this.fetchStats(selectedYear, this.state.league);
+  }
+
+  onLeagueSelect(selectedLeague) {
+    // Update the league within fetchStats()
+    // If updating prior to the call, it wasn't updating in time for the fetch
+    this.setState({loading: true});
+    this.fetchStats(this.state.year, selectedLeague);
   }
 
   render() {
@@ -220,7 +181,7 @@ class TeamGrid extends React.Component {
     }
 
     // Create standings table
-    const standingsData = this.assembleStandingsData();
+    const standingsData = assembleStandingsData(this.state);
     // console.log(standingsData);
 
     const teams = this.state.team.map( (team, ii) => {
@@ -234,12 +195,13 @@ class TeamGrid extends React.Component {
 
     // Calculate the number of years the pool has been running for
     // the year selection drop down menu
-    // TODO, we should fetch this from the backend which "SELECT DISTINCT"
+    // TODO, we should fetch this from the backend with "SELECT DISTINCT"
     // from the database
     const startYear = 2020;
     const nYears = new Date().getFullYear() - startYear + 1;
     // Generates: [2020, 2021, 2022 .... up to the current year]
     const yearArray = [...Array(nYears).keys()].map(x => x + startYear);
+    const leagueArray = ["Rose City", "Scam"];
 
     return (
       <>
@@ -267,8 +229,16 @@ class TeamGrid extends React.Component {
           <div className={styles.teamsPane}>
             <div className={styles.sortBar}>
               <Dropdown
+                selectId="league"
+                label=""
+                selectName="league"
+                options={leagueArray}
+                onSelect={this.onLeagueSelect}
+                initialSelect={this.state.league}
+              />
+              <Dropdown
                 selectId="poolYear"
-                label="Year:"
+                label=""
                 selectName="poolYear"
                 options={yearArray}
                 onSelect={this.onYearSelect}
@@ -276,7 +246,7 @@ class TeamGrid extends React.Component {
               />
               <Dropdown
                 selectId="sortBy"
-                label="Sort By:"
+                label="Sort:"
                 selectName="sortBy"
                 options={this.sortOptions}
                 onSelect={this.onSortSelect}
@@ -392,3 +362,49 @@ function TeamTableEntries(props) {
     })
   );
 }
+
+const getSortCallback = (optionIndex, standingsData) => {
+
+  switch(optionIndex) {
+  case 0: // Alphabetical
+    return (teamA, teamB) => teamA.name.localeCompare(teamB.name);
+  case 1: // Draft Order
+    return (teamA, teamB) => teamA.stats[0].pick - teamB.stats[0].pick;
+  case 2: // Standings
+  default:
+    // Copy the standingsData order
+    const standingsTeamOrder = standingsData.stats.map( ({firstname}) => firstname );
+    return (teamA, teamB) => standingsTeamOrder.indexOf(teamA.name) - standingsTeamOrder.indexOf(teamB.name);
+  }
+
+};
+
+const assembleStandingsData = (inState) => {
+  // Create object that is similar to the "state" object in structure
+  // Pass the object into the Team component for standings
+  // The "name" of the team will be "Standings"
+  // The stats will be each team name and their total points
+
+  const standingsData = inState.team.map( team => {
+
+    const teamTotalPoints = team.stats.reduce((sum, stat) => {
+      return sum + stat.points;
+    }, 0);
+
+    return ({
+      firstname: team.name,
+      lastname:  "",
+      points:    teamTotalPoints,
+      logo:      false,
+    });
+  });
+
+  standingsData.sort((a, b) => {
+    return b.points - a.points;
+  });
+
+  return ({
+    name: "Standings",
+    stats: standingsData,
+  });
+};

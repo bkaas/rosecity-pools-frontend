@@ -33,6 +33,7 @@ import Newjersey from "../../assets/newjersey.svg"
 import Anaheim from "../../assets/anaheim.svg"
 import Buffalo from "../../assets/buffalo.svg"
 import Seattle from "../../assets/seattle.svg"
+import Utah from "../../assets/utah.svg"
 
 // indexed by name according to the nhl.teams logo string
 const teamIcons =
@@ -69,6 +70,7 @@ const teamIcons =
     anaheim:      <Anaheim />,
     buffalo:      <Buffalo />,
     seattle:      <Seattle />,
+    utah:         <Utah />,
   };
 
 
